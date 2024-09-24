@@ -3,6 +3,7 @@ import random
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.stats import norm
 
 # Set up parameter ranges
@@ -27,79 +28,49 @@ lower_barrier = 90  # Lower barrier for double barrier options
 
 def simulate_heston_gbm(S0, r, v0, T, steps, kappa, theta, sigma_v, rho_v):
     """
-    Simulate a stock price path using the Heston model for stochastic volatility.
-
-    Args:
-        S0 (float): Initial stock price.
-        r (float): Risk-free interest rate.
-        v0 (float): Initial variance.
-        T (float): Time to maturity.
-        steps (int): Number of time steps.
-        kappa (float): Speed of mean reversion.
-        theta (float): Long-term mean of variance.
-        sigma_v (float): Volatility of volatility.
-        rho_v (float): Correlation between stock price and volatility.
-
-    Returns:
-        tuple: Simulated price path and volatility path.
+    Vectorized simulation of stock price paths using the Heston model.
     """
     dt = T / steps
     prices = np.zeros(steps)
     volatilities = np.zeros(steps)
     prices[0] = S0
-    volatilities[0] = v0  # Start with initial variance
+    volatilities[0] = v0
+
+    Z1 = np.random.standard_normal(steps - 1)  # Wiener process for price
+    Z2 = np.random.standard_normal(steps - 1)  # Wiener process for volatility
+    Z2 = rho_v * Z1 + np.sqrt(1 - rho_v**2) * Z2  # Correlated Z2
 
     for t in range(1, steps):
-        Z1 = np.random.standard_normal()  # Wiener process for price
-        Z2 = np.random.standard_normal()  # Wiener process for volatility
-        Z2 = rho_v * Z1 + np.sqrt(1 - rho_v**2) * Z2  # Correlated Z2
-
-        # Heston stochastic volatility process
-        volatilities[t] = max(
+        volatilities[t] = np.maximum(
             volatilities[t - 1]
             + kappa * (theta - volatilities[t - 1]) * dt
-            + sigma_v * np.sqrt(volatilities[t - 1]) * np.sqrt(dt) * Z2,
+            + sigma_v * np.sqrt(volatilities[t - 1]) * np.sqrt(dt) * Z2[t - 1],
             0,
         )
 
-        # Geometric Brownian Motion with stochastic volatility
         prices[t] = prices[t - 1] * np.exp(
             (r - 0.5 * volatilities[t - 1]) * dt
-            + np.sqrt(volatilities[t - 1]) * np.sqrt(dt) * Z1
+            + np.sqrt(volatilities[t - 1]) * np.sqrt(dt) * Z1[t - 1]
         )
 
-    return prices, np.sqrt(volatilities)  # Returning price path and volatilities
+    return prices, np.sqrt(volatilities)
 
 
 def calculate_exotic_payoffs(price_path, K, upper_barrier, lower_barrier, r, T):
     """
-    Calculate the payoffs for exotic options including Up-and-In, Up-and-Out, Lookback,
-    Asian, and Double Barrier options.
-
-    Args:
-        price_path (np.array): Simulated stock price path.
-        K (float): Strike price.
-        upper_barrier (float): Upper barrier level for knock-in/knock-out options.
-        lower_barrier (float): Lower barrier level for double barrier options.
-        r (float): Risk-free interest rate.
-        T (float): Time to maturity (years).
-
-    Returns:
-        tuple: Payoffs for (Up-and-In Call, Up-and-Out Call, European Lookback Call, Asian Call, Double Barrier Call)
+    Vectorized calculation of exotic option payoffs.
     """
     ST = price_path[-1]
     avg_price = np.mean(price_path)
     min_price = np.min(price_path)
     max_price = np.max(price_path)
 
-    up_in_call = max(ST - K, 0) if max_price >= upper_barrier else 0
-    up_out_call = max(ST - K, 0) if max_price < upper_barrier else 0
+    up_in_call = np.where(max_price >= upper_barrier, max(ST - K, 0), 0)
+    up_out_call = np.where(max_price < upper_barrier, max(ST - K, 0), 0)
     lookback_call = max(max_price - K, 0)
     asian_call = max(avg_price - K, 0)
-    double_barrier_call = (
-        max(ST - K, 0)
-        if (min_price > lower_barrier and max_price < upper_barrier)
-        else 0
+    double_barrier_call = np.where(
+        (min_price > lower_barrier) & (max_price < upper_barrier), max(ST - K, 0), 0
     )
 
     return up_in_call, up_out_call, lookback_call, asian_call, double_barrier_call
@@ -107,65 +78,37 @@ def calculate_exotic_payoffs(price_path, K, upper_barrier, lower_barrier, r, T):
 
 def calculate_greeks(price_path, vol_path, S0, K, r, T):
     """
-    Calculate the relevant Greeks (Delta, Gamma, Theta, Vega, Rho) for options using
-    the Black-Scholes model with the average volatility from the Heston model.
-
-    Args:
-        price_path (np.array): Simulated stock price path.
-        vol_path (np.array): Simulated volatility path.
-        S0 (float): Initial stock price.
-        K (float): Strike price.
-        r (float): Risk-free interest rate.
-        T (float): Time to maturity (years).
-
-    Returns:
-        tuple: (Delta, Gamma, Theta, Vega, Rho)
+    Vectorized calculation of the Greeks using Black-Scholes formulas.
     """
     ST = price_path[-1]
-    sigma = np.mean(vol_path)  # Use average volatility in the Black-Scholes formulas
+    sigma = np.mean(vol_path)
 
-    # Black-Scholes d1 and d2
     d1 = (np.log(S0 / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
 
-    # Calculate Greeks dynamically
-    delta = norm.cdf(d1)  # Delta for a European call
-    gamma = norm.pdf(d1) / (S0 * sigma * np.sqrt(T))  # Gamma formula
+    delta = norm.cdf(d1)
+    gamma = norm.pdf(d1) / (S0 * sigma * np.sqrt(T))
     theta = -(S0 * norm.pdf(d1) * sigma) / (2 * np.sqrt(T)) - r * K * np.exp(
         -r * T
-    ) * norm.cdf(
-        d2
-    )  # Theta for a call option
-    vega = S0 * norm.pdf(d1) * np.sqrt(T)  # Vega formula
-    rho = K * T * np.exp(-r * T) * norm.cdf(d2)  # Rho formula
+    ) * norm.cdf(d2)
+    vega = S0 * norm.pdf(d1) * np.sqrt(T)
+    rho = K * T * np.exp(-r * T) * norm.cdf(d2)
 
     return delta, gamma, theta, vega, rho
 
 
 def run_monte_carlo(simulations, N_iterations, steps, theta):
     """
-    Run multiple Monte Carlo simulations with the Heston model and calculate exotic
-    option payoffs and Greeks.
-
-    Args:
-        simulations (int): Number of Monte Carlo simulations to run.
-        N_iterations (int): Number of iterations for each simulation.
-        steps (int): Number of time steps for each simulation.
-        theta (float): Long-term mean of variance.
-
-    Returns:
-        pd.DataFrame: Dataframe containing results of all simulations.
+    Run Monte Carlo simulations in parallel and compute option payoffs and Greeks.
     """
-    results = []
 
-    for sim in range(simulations):
+    def run_single_simulation(sim_id, theta):
         S0 = random.uniform(*S0_range)
         K = random.uniform(*K_range)
         T = random.uniform(*T_range)
         r = random.uniform(*r_range)
-        sigma_v = random.uniform(*sigma_v_range)  # Volatility of volatility
+        sigma_v = random.uniform(*sigma_v_range)
 
-        # Initialize accumulators for the payoffs and Greeks
         up_in_call_sum = 0
         up_out_call_sum = 0
         lookback_call_sum = 0
@@ -173,29 +116,23 @@ def run_monte_carlo(simulations, N_iterations, steps, theta):
         double_barrier_call_sum = 0
         delta_sum = 0
         gamma_sum = 0
-        theta_greek_sum = 0  # Changed variable name here
+        theta_greek_sum = 0
         vega_sum = 0
         rho_sum = 0
 
-        # Perform N_iterations for the current Monte Carlo
         for i in range(N_iterations):
             price_path, vol_path = simulate_heston_gbm(
                 S0, r, v0, T, steps, kappa, theta, sigma_v, rho_v
             )
-
-            # Calculate exotic option payoffs
             up_in_call, up_out_call, lookback_call, asian_call, double_barrier_call = (
                 calculate_exotic_payoffs(
                     price_path, K, upper_barrier, lower_barrier, r, T
                 )
             )
-
-            # Calculate Greeks
             delta, gamma, theta, vega, rho = calculate_greeks(
                 price_path, vol_path, S0, K, r, T
             )
 
-            # Accumulate the results
             up_in_call_sum += up_in_call
             up_out_call_sum += up_out_call
             lookback_call_sum += lookback_call
@@ -203,31 +140,33 @@ def run_monte_carlo(simulations, N_iterations, steps, theta):
             double_barrier_call_sum += double_barrier_call
             delta_sum += delta
             gamma_sum += gamma
-            theta_greek_sum += theta  # Use the renamed variable here
+            theta_greek_sum += theta
             vega_sum += vega
             rho_sum += rho
 
-        # Calculate the averages for the current simulation
-        results.append(
-            {
-                "Simulation_ID": sim + 1,
-                "S0": S0,
-                "K": K,
-                "T": T,
-                "r": r,
-                "sigma_v": sigma_v,
-                "Up-and-In_Call": up_in_call_sum / N_iterations,
-                "Up-and-Out_Call": up_out_call_sum / N_iterations,
-                "European_Lookback_Call": lookback_call_sum / N_iterations,
-                "Asian_Call": asian_call_sum / N_iterations,
-                "Double_Barrier_Call": double_barrier_call_sum / N_iterations,
-                "Delta": delta_sum / N_iterations,
-                "Gamma": gamma_sum / N_iterations,
-                "Theta": theta_greek_sum / N_iterations,  # Renamed here as well
-                "Vega": vega_sum / N_iterations,
-                "Rho": rho_sum / N_iterations,
-            }
-        )
+        return {
+            "Simulation_ID": sim_id + 1,
+            "S0": S0,
+            "K": K,
+            "T": T,
+            "r": r,
+            "sigma_v": sigma_v,
+            "Up-and-In_Call": up_in_call_sum / N_iterations,
+            "Up-and-Out_Call": up_out_call_sum / N_iterations,
+            "European_Lookback_Call": lookback_call_sum / N_iterations,
+            "Asian_Call": asian_call_sum / N_iterations,
+            "Double_Barrier_Call": double_barrier_call_sum / N_iterations,
+            "Delta": delta_sum / N_iterations,
+            "Gamma": gamma_sum / N_iterations,
+            "Theta": theta_greek_sum / N_iterations,
+            "Vega": vega_sum / N_iterations,
+            "Rho": rho_sum / N_iterations,
+        }
+
+    # Parallelize the simulations using joblib
+    results = Parallel(n_jobs=-1)(
+        delayed(run_single_simulation)(i, theta) for i in range(simulations)
+    )
 
     return pd.DataFrame(results)
 
@@ -235,41 +174,12 @@ def run_monte_carlo(simulations, N_iterations, steps, theta):
 def save_to_csv(df, filename):
     """
     Save the dataframe containing the simulation results to a CSV file.
-
-    Args:
-        df (pd.DataFrame): Dataframe containing the simulation results.
-        filename (str): The name of the CSV file to save the data.
     """
-    columns = [
-        "Simulation_ID",
-        "S0",
-        "K",
-        "T",
-        "r",
-        "sigma_v",
-        "Up-and-In_Call",
-        "Up-and-Out_Call",
-        "European_Lookback_Call",
-        "Asian_Call",
-        "Double_Barrier_Call",
-        "Delta",
-        "Gamma",
-        "Theta",
-        "Vega",
-        "Rho",
-    ]
-    df.to_csv(
-        filename,
-        columns=columns,
-        index=False,
-        encoding="utf-8",
-        sep=",",
-        float_format="%.6f",
-    )
+    df.to_csv(filename, index=False, encoding="utf-8", sep=",", float_format="%.6f")
 
 
-# User Input: Number of Monte Carlo simulations to run
-simulations = 10  # Adjust this as needed
+# Number of Monte Carlo simulations to run
+simulations = 1000  # Adjust this as needed
 
 # Run the Monte Carlo simulations
 df_results = run_monte_carlo(simulations, N_iterations, steps, theta)
