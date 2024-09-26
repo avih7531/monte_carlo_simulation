@@ -156,7 +156,7 @@ if __name__ == "__main__":
     ]
 
     Up_and_Out_Call = EnsembleModel(
-        "/Users/orangoodman/dev/monte_carlo_simulation/monte_carlo_simulation_results_heston.csv",
+        "monte_carlo_simulation_results_heston.csv",
         models,
         "Up-and-Out_Call",
     )
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     Up_and_Out_Call.test()
     print("\n\n\n\n\n\n")
     Up_and_In_Call = EnsembleModel(
-        "/Users/orangoodman/dev/monte_carlo_simulation/monte_carlo_simulation_results_heston.csv",
+        "monte_carlo_simulation_results_heston.csv",
         [
             LinearRegression(),
             KNN(),
