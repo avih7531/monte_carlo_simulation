@@ -1,17 +1,14 @@
-import sklearn
-import pandas as pd
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.linear_model import LinearRegression as SKLinearRegression
-from sklearn.ensemble import RandomForestRegressor
 import time
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression as SKLinearRegression
+from sklearn.neighbors import KNeighborsRegressor
 
 
 class KNN:
-    def __init__(
-        self,
-        n_neighbors=5,
-        weights="uniform",
-    ):
+    def __init__(self, n_neighbors=5, weights="uniform"):
         self.n_neighbors = n_neighbors
         self.model = KNeighborsRegressor(
             n_neighbors=n_neighbors, weights=weights, algorithm="auto"
@@ -70,7 +67,6 @@ class RandomForest:
 class Dataset:
     def __init__(self, csv_path):
         self.data = pd.read_csv(csv_path).drop(columns=["Simulation_ID"])
-
         self.X = self.data.drop(
             columns=[
                 "Up-and-In_Call",
@@ -80,7 +76,7 @@ class Dataset:
                 "Double_Barrier_Call",
             ]
         )
-
+        self.feature_names = self.X.columns.tolist()
         self.train_x = self.X.iloc[: int(len(self.X) * 0.8)]
         self.train_y = self.data.iloc[: int(len(self.X) * 0.8)]
         self.val_x = self.X.iloc[int(len(self.X) * 0.8) : int(len(self.X) * 0.9)]
@@ -139,6 +135,30 @@ class EnsembleModel:
                 )
         return outputs
 
+    def plot_predictions_vs_actual(self, output_dir="plot"):
+        for model in self.models:
+            predictions = model.predict(self.data.test_x)
+            plt.figure(figsize=(10, 6))
+            plt.scatter(self.data.test_y[self.target], predictions, alpha=0.5)
+            plt.plot(
+                [
+                    self.data.test_y[self.target].min(),
+                    self.data.test_y[self.target].max(),
+                ],
+                [
+                    self.data.test_y[self.target].min(),
+                    self.data.test_y[self.target].max(),
+                ],
+                "r--",
+            )
+            plt.title(f"Predicted vs Actual for {str(model)}")
+            plt.xlabel("Actual Values")
+            plt.ylabel("Predicted Values")
+            plt.savefig(
+                f"{output_dir}/{self.target}_Predicted_vs_Actual_{str(model).replace(' ', '_')}.png"
+            )
+            plt.close()
+
     def __str__(self):
         return f"EnsembleModel with to target {self.target} with models {[str(model) for model in models]}"
 
@@ -149,76 +169,39 @@ if __name__ == "__main__":
         KNN(),
         KNN(n_neighbors=10),
         KNN(n_neighbors=50),
-        # RandomForest(),
-        # RandomForest(n_estimators=200),
-        RandomForest(n_estimators=50),
-        RandomForest(n_estimators=10),
     ]
 
     Up_and_Out_Call = EnsembleModel(
-        "monte_carlo_simulation_results_heston.csv",
-        models,
-        "Up-and-Out_Call",
+        "monte_carlo_simulation_results_heston.csv", models, "Up-and-Out_Call"
     )
     Up_and_Out_Call.fit()
     Up_and_Out_Call.test()
-    print("\n\n\n\n\n\n")
+    Up_and_Out_Call.plot_predictions_vs_actual()
+
     Up_and_In_Call = EnsembleModel(
-        "monte_carlo_simulation_results_heston.csv",
-        [
-            LinearRegression(),
-            KNN(),
-            KNN(n_neighbors=10),
-            KNN(n_neighbors=50),
-            RandomForest(n_estimators=50),
-            RandomForest(n_estimators=10),
-        ],
-        "Up-and-In_Call",
+        "monte_carlo_simulation_results_heston.csv", models, "Up-and-In_Call"
     )
     Up_and_In_Call.fit()
     Up_and_In_Call.test()
-    print("\n\n\n\n\n\n")
+    Up_and_In_Call.plot_predictions_vs_actual()
+
     European_Lookback_Call = EnsembleModel(
-        "/Users/orangoodman/dev/monte_carlo_simulation/monte_carlo_simulation_results_heston.csv",
-        [
-            LinearRegression(),
-            KNN(),
-            KNN(n_neighbors=10),
-            KNN(n_neighbors=50),
-            RandomForest(n_estimators=50),
-            RandomForest(n_estimators=10),
-        ],
-        "European_Lookback_Call",
+        "monte_carlo_simulation_results_heston.csv", models, "European_Lookback_Call"
     )
     European_Lookback_Call.fit()
     European_Lookback_Call.test()
-    print("\n\n\n\n\n\n")
+    European_Lookback_Call.plot_predictions_vs_actual()
+
     Asian_Call = EnsembleModel(
-        "/Users/orangoodman/dev/monte_carlo_simulation/monte_carlo_simulation_results_heston.csv",
-        [
-            LinearRegression(),
-            KNN(),
-            KNN(n_neighbors=10),
-            KNN(n_neighbors=50),
-            RandomForest(n_estimators=50),
-            RandomForest(n_estimators=10),
-        ],
-        "Asian_Call",
+        "monte_carlo_simulation_results_heston.csv", models, "Asian_Call"
     )
     Asian_Call.fit()
     Asian_Call.test()
-    print("\n\n\n\n\n\n")
+    Asian_Call.plot_predictions_vs_actual()
+
     Double_Barrier_Call = EnsembleModel(
-        "/Users/orangoodman/dev/monte_carlo_simulation/monte_carlo_simulation_results_heston.csv",
-        [
-            LinearRegression(),
-            KNN(),
-            KNN(n_neighbors=10),
-            KNN(n_neighbors=50),
-            RandomForest(n_estimators=50),
-            RandomForest(n_estimators=10),
-        ],
-        "Double_Barrier_Call",
+        "monte_carlo_simulation_results_heston.csv", models, "Double_Barrier_Call"
     )
     Double_Barrier_Call.fit()
     Double_Barrier_Call.test()
+    Double_Barrier_Call.plot_predictions_vs_actual()
