@@ -6,6 +6,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 from scipy.stats import norm
 from tqdm import tqdm
+import argparse
 
 # Set up parameter ranges
 S0_range = (50, 150)  # Initial stock price range
@@ -197,15 +198,44 @@ def save_to_csv(df, filename):
     df.to_csv(filename, index=False, encoding="utf-8", sep=",", float_format="%.6f")
 
 
-# Number of Monte Carlo simulations to run
-simulations = 1000000  # Adjust this as needed
+if __name__ == "__main__":
 
-# Run the Monte Carlo simulations
-df_results = run_monte_carlo(simulations, N_iterations, steps, theta)
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+        description="Run Monte Carlo simulations using the Heston model."
+    )
+    parser.add_argument(
+        "--simulations",
+        type=int,
+        default=1000000,
+        help="Number of Monte Carlo simulations to run",
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=10000,
+        help="Number of iterations per simulation",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="monte_carlo_simulation_results_heston.csv",
+        help="Output CSV file path",
+    )
 
-# Save the results to CSV
-save_to_csv(df_results, "monte_carlo_simulation_results_heston.csv")
+    args = parser.parse_args()
 
-print(
-    "Monte Carlo simulations with the Heston model complete. Results saved to 'monte_carlo_simulation_results_heston.csv'."
-)
+    # Number of Monte Carlo simulations to run
+    simulations = args.simulations
+    N_iterations = args.iterations
+    output_path = args.output
+
+    # Run the Monte Carlo simulations
+    df_results = run_monte_carlo(simulations, N_iterations, steps, theta)
+
+    # Save the results to CSV
+    save_to_csv(df_results, output_path)
+
+    print(
+        f"Monte Carlo simulations with the Heston model complete. Results saved to '{output_path}'."
+    )
