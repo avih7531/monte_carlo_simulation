@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from scipy.stats import norm
+from tqdm import tqdm
 
 # Set up parameter ranges
 S0_range = (50, 150)  # Initial stock price range
@@ -20,7 +21,7 @@ rho_v = -0.5  # Correlation between stock price and volatility
 v0 = 0.04  # Initial variance (i.e., initial volatility squared)
 
 # Monte Carlo Parameters
-N_iterations = 1000  # Fixed number of iterations per simulation
+N_iterations = 10000  # Fixed number of iterations per simulation
 steps = 252  # Number of time steps (days in a year)
 upper_barrier = 110  # Upper barrier for up-and-in and up-and-out options
 lower_barrier = 90  # Lower barrier for double barrier options
@@ -180,9 +181,10 @@ def run_monte_carlo(simulations, N_iterations, steps, theta):
             "Rho": rho_sum / N_iterations,
         }
 
-    # Parallelize the simulations using joblib
+    # Parallelize the simulations using joblib with tqdm progress bar
     results = Parallel(n_jobs=-1)(
-        delayed(run_single_simulation)(i, theta) for i in range(simulations)
+        delayed(run_single_simulation)(i, theta)
+        for i in tqdm(range(simulations), desc="Simulations")
     )
 
     return pd.DataFrame(results)
@@ -196,7 +198,7 @@ def save_to_csv(df, filename):
 
 
 # Number of Monte Carlo simulations to run
-simulations = 100000  # Adjust this as needed
+simulations = 1000000  # Adjust this as needed
 
 # Run the Monte Carlo simulations
 df_results = run_monte_carlo(simulations, N_iterations, steps, theta)

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression as SKLinearRegression
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.metrics import r2_score
+from scipy.stats import pearsonr
 
 
 class KNN:
@@ -125,10 +127,8 @@ class EnsembleModel:
         outputs = {}
         for model in self.models:
             time_begin = time.monotonic()
-            outputs[str(model)] = [
-                model.test(self.data.test_x, self.data.test_y[self.target]),
-                time.monotonic() - time_begin,
-            ]
+            r2_score = model.test(self.data.test_x, self.data.test_y[self.target])
+            outputs[str(model)] = [r2_score, time.monotonic() - time_begin]
             if self.verbose:
                 print(
                     f"{str(model)}: {outputs[str(model)][0]} in {round(outputs[str(model)][1], 5)} seconds"
@@ -138,6 +138,8 @@ class EnsembleModel:
     def plot_predictions_vs_actual(self, output_dir="plot"):
         for model in self.models:
             predictions = model.predict(self.data.test_x)
+            r2 = r2_score(self.data.test_y[self.target], predictions)
+            pearson_r, _ = pearsonr(self.data.test_y[self.target], predictions)
             plt.figure(figsize=(10, 6))
             plt.scatter(self.data.test_y[self.target], predictions, alpha=0.5)
             plt.plot(
@@ -151,13 +153,21 @@ class EnsembleModel:
                 ],
                 "r--",
             )
-            plt.title(f"Predicted vs Actual for {str(model)}")
+            plt.title(
+                f"Predicted vs Actual for {str(model)}\nR² = {r2:.6f}, Pearson R = {pearson_r:.6f}"
+            )
             plt.xlabel("Actual Values")
             plt.ylabel("Predicted Values")
             plt.savefig(
                 f"{output_dir}/{self.target}_Predicted_vs_Actual_{str(model).replace(' ', '_')}.png"
             )
             plt.close()
+
+    def print_r2_scores(self):
+        print("R² Scores:")
+        for model in self.models:
+            r2_score = model.test(self.data.test_x, self.data.test_y[self.target])
+            print(f"{str(model)}: {r2_score}")
 
     def __str__(self):
         return f"EnsembleModel with to target {self.target} with models {[str(model) for model in models]}"
@@ -177,6 +187,7 @@ if __name__ == "__main__":
     Up_and_Out_Call.fit()
     Up_and_Out_Call.test()
     Up_and_Out_Call.plot_predictions_vs_actual()
+    Up_and_Out_Call.print_r2_scores()
 
     Up_and_In_Call = EnsembleModel(
         "monte_carlo_simulation_results_heston.csv", models, "Up-and-In_Call"
@@ -184,6 +195,7 @@ if __name__ == "__main__":
     Up_and_In_Call.fit()
     Up_and_In_Call.test()
     Up_and_In_Call.plot_predictions_vs_actual()
+    Up_and_In_Call.print_r2_scores()
 
     European_Lookback_Call = EnsembleModel(
         "monte_carlo_simulation_results_heston.csv", models, "European_Lookback_Call"
@@ -191,6 +203,7 @@ if __name__ == "__main__":
     European_Lookback_Call.fit()
     European_Lookback_Call.test()
     European_Lookback_Call.plot_predictions_vs_actual()
+    European_Lookback_Call.print_r2_scores()
 
     Asian_Call = EnsembleModel(
         "monte_carlo_simulation_results_heston.csv", models, "Asian_Call"
@@ -198,6 +211,7 @@ if __name__ == "__main__":
     Asian_Call.fit()
     Asian_Call.test()
     Asian_Call.plot_predictions_vs_actual()
+    Asian_Call.print_r2_scores()
 
     Double_Barrier_Call = EnsembleModel(
         "monte_carlo_simulation_results_heston.csv", models, "Double_Barrier_Call"
@@ -205,3 +219,4 @@ if __name__ == "__main__":
     Double_Barrier_Call.fit()
     Double_Barrier_Call.test()
     Double_Barrier_Call.plot_predictions_vs_actual()
+    Double_Barrier_Call.print_r2_scores()
