@@ -1,0 +1,7 @@
+scipy
+numpy
+pandas
+joblib
+scikit-learn
+pytorch
+lightning

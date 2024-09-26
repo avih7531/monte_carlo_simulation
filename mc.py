@@ -205,5 +205,5 @@ df_results = run_monte_carlo(simulations, N_iterations, steps, theta)
 save_to_csv(df_results, "monte_carlo_simulation_results_heston.csv")
 
 print(
-    f"Monte Carlo simulations with the Heston model complete. Results saved to 'monte_carlo_simulation_results_heston.csv'."
+    "Monte Carlo simulations with the Heston model complete. Results saved to 'monte_carlo_simulation_results_heston.csv'."
 )
